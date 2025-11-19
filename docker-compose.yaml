@@ -78,6 +78,7 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - ${AIRFLOW_PROJ_DIR:-.}/scripts:/opt/airflow/scripts
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -293,7 +294,6 @@ services:
       - POSTGRES_PASSWORD=pagila_password
       - POSTGRES_DB=pagila
     volumes:
-      - ./scripts:/docker-entrypoint-initdb.d
       - pagila-db-volume:/var/lib/postgresql/data
     ports:
       - "5433:5432"
