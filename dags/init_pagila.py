@@ -1,8 +1,7 @@
 from datetime import datetime
 from airflow import DAG
 from airflow.providers.postgres.operators.postgres import PostgresOperator
-
-SCRIPTS_PATH = '/opt/airflow/scripts'
+from config import SCRIPTS_PATH
 
 default_args = {
     'owner': 'airflow',
@@ -18,6 +17,17 @@ with DAG(
     tags=['pagila', 'setup']
 ) as dag:
 
+    drop_schema = PostgresOperator(
+        task_id='drop_schema',
+        postgres_conn_id='postgres_pagila_conn',
+        sql="""
+            DROP SCHEMA public CASCADE;
+            CREATE SCHEMA public;
+            GRANT ALL ON SCHEMA public TO pagila_user;
+            GRANT ALL ON SCHEMA public TO public;
+        """
+    )
+
     create_schema = PostgresOperator(
         task_id='create_schema',
         postgres_conn_id='postgres_pagila_conn',
@@ -30,4 +40,4 @@ with DAG(
         sql='pagila-insert-data.sql'
     )
 
-    create_schema >> populate_data
+    drop_schema >> create_schema >> populate_data

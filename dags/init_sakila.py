@@ -1,8 +1,7 @@
 from datetime import datetime
 from airflow import DAG
 from airflow.providers.mysql.operators.mysql import MySqlOperator
-
-SCRIPTS_PATH = '/opt/airflow/scripts'
+from config import SCRIPTS_PATH 
 
 default_args = {
     'owner': 'airflow',
