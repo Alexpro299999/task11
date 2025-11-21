@@ -1,0 +1,1 @@
+SCRIPTS_PATH = '/opt/airflow/scripts'
