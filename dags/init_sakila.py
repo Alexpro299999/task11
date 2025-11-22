@@ -1,7 +1,7 @@
 from datetime import datetime
 from airflow import DAG
-from airflow.providers.mysql.operators.mysql import MySqlOperator
-from config import SCRIPTS_PATH 
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+from config import SCRIPTS_PATH
 
 default_args = {
     'owner': 'airflow',
@@ -17,16 +17,16 @@ with DAG(
     tags=['sakila', 'mysql', 'setup']
 ) as dag:
 
-    create_schema = MySqlOperator(
+    create_schema = SQLExecuteQueryOperator(
         task_id='create_schema',
-        mysql_conn_id='mysql_sakila_conn',
+        conn_id='mysql_sakila_conn',
         sql='sakila-mysql-clean.sql'
     )
 
-    populate_data = MySqlOperator(
+    populate_data = SQLExecuteQueryOperator(
         task_id='populate_data',
-        mysql_conn_id='mysql_sakila_conn',
-        sql='sakila-mysql-data.sql'
+        conn_id='mysql_sakila_conn',
+        sql='sakila-mysql-clean-data.sql'
     )
 
     create_schema >> populate_data
