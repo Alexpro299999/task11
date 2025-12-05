@@ -1,7 +1,10 @@
 from datetime import datetime
 from airflow import DAG
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+from airflow.providers.airbyte.operators.airbyte import AirbyteTriggerSyncOperator
 from config import SCRIPTS_PATH
+
+AIRBYTE_SAKILA_CONNECTION_ID = 'ff49dfa6-f38d-4bd6-98e6-e77c51cb6f5d'
 
 default_args = {
     'owner': 'airflow',
@@ -29,4 +32,13 @@ with DAG(
         sql='sakila-mysql-clean-data.sql'
     )
 
-    create_schema >> populate_data
+    trigger_airbyte = AirbyteTriggerSyncOperator(
+        task_id='trigger_airbyte_sakila',
+        airbyte_conn_id='airbyte_conn',
+        connection_id=AIRBYTE_SAKILA_CONNECTION_ID,
+        asynchronous=False,
+        timeout=3600,
+        wait_seconds=3
+    )
+
+    create_schema >> populate_data >> trigger_airbyte

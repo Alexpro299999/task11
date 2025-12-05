@@ -1,7 +1,10 @@
 from datetime import datetime
 from airflow import DAG
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+from airflow.providers.airbyte.operators.airbyte import AirbyteTriggerSyncOperator
 from config import SCRIPTS_PATH
+
+AIRBYTE_PAGILA_CONNECTION_ID = '5fb9643a-d92c-41ee-887c-a420827e2563'
 
 default_args = {
     'owner': 'airflow',
@@ -40,4 +43,13 @@ with DAG(
         sql='pagila-insert-data.sql'
     )
 
-    drop_schema >> create_schema >> populate_data
+    trigger_airbyte = AirbyteTriggerSyncOperator(
+        task_id='trigger_airbyte_pagila',
+        airbyte_conn_id='airbyte_conn',
+        connection_id=AIRBYTE_PAGILA_CONNECTION_ID,
+        asynchronous=False,
+        timeout=3600,
+        wait_seconds=3
+    )
+
+    drop_schema >> create_schema >> populate_data >> trigger_airbyte
