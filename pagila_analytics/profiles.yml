@@ -1,0 +1,14 @@
+pagila_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: dq40929.sweden-central.azure
+      user: dbt_user
+      password: YourStrongPassword123!
+      role: dbt_dev_role
+      warehouse: airbyte_warehouse
+      database: analytics
+      schema: dbt_dev
+      threads: 4
+      client_session_keep_alive: False

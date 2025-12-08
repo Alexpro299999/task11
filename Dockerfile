@@ -9,5 +9,5 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 USER airflow
-# Ставим фиксированную версию, чтобы не ломать ядро Airflow
-RUN pip install apache-airflow-providers-airbyte==4.0.0 apache-airflow-providers-mysql
+
+RUN pip install apache-airflow-providers-airbyte==3.8.1 apache-airflow-providers-mysql

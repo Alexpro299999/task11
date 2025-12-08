@@ -4,7 +4,7 @@ from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.airbyte.operators.airbyte import AirbyteTriggerSyncOperator
 from config import SCRIPTS_PATH
 
-AIRBYTE_PAGILA_CONNECTION_ID = '5fb9643a-d92c-41ee-887c-a420827e2563'
+AIRBYTE_PAGILA_CONNECTION_ID = 'fefe9132-05b4-4b9f-a708-44d222ea5fc4'
 
 default_args = {
     'owner': 'airflow',
