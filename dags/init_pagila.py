@@ -1,8 +1,13 @@
 from datetime import datetime
 from airflow import DAG
-from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+from airflow.operators.bash import BashOperator
 from airflow.providers.airbyte.operators.airbyte import AirbyteTriggerSyncOperator
-from config import SCRIPTS_PATH
+
+SCHEMA_URL = "https://raw.githubusercontent.com/devrimgunduz/pagila/master/pagila-schema.sql"
+DATA_URL = "https://raw.githubusercontent.com/devrimgunduz/pagila/master/pagila-insert-data.sql"
+
+SCHEMA_PATH = "/opt/airflow/scripts/pagila-schema.sql"
+DATA_PATH = "/opt/airflow/scripts/pagila-data.sql"
 
 AIRBYTE_PAGILA_CONNECTION_ID = 'fefe9132-05b4-4b9f-a708-44d222ea5fc4'
 
@@ -16,31 +21,21 @@ with DAG(
     default_args=default_args,
     schedule=None,
     catchup=False,
-    template_searchpath=[SCRIPTS_PATH],
     tags=['pagila', 'setup']
 ) as dag:
 
-    drop_schema = SQLExecuteQueryOperator(
-        task_id='drop_schema',
-        conn_id='postgres_pagila_conn',
-        sql="""
-            DROP SCHEMA public CASCADE;
-            CREATE SCHEMA public;
-            GRANT ALL ON SCHEMA public TO pagila_user;
-            GRANT ALL ON SCHEMA public TO public;
+    download_files = BashOperator(
+        task_id='download_files',
+        bash_command=f"curl -L {SCHEMA_URL} -o {SCHEMA_PATH} && curl -L {DATA_URL} -o {DATA_PATH}"
+    )
+
+    init_db = BashOperator(
+        task_id='init_db',
+        bash_command=f"""
+            PGPASSWORD=pagila_password psql -h postgres-pagila -U pagila_user -d pagila -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" && \\
+            PGPASSWORD=pagila_password psql -h postgres-pagila -U pagila_user -d pagila -f {SCHEMA_PATH} && \\
+            PGPASSWORD=pagila_password psql -h postgres-pagila -U pagila_user -d pagila -f {DATA_PATH}
         """
-    )
-
-    create_schema = SQLExecuteQueryOperator(
-        task_id='create_schema',
-        conn_id='postgres_pagila_conn',
-        sql='pagila-schema.sql'
-    )
-
-    populate_data = SQLExecuteQueryOperator(
-        task_id='populate_data',
-        conn_id='postgres_pagila_conn',
-        sql='pagila-insert-data.sql'
     )
 
     trigger_airbyte = AirbyteTriggerSyncOperator(
@@ -52,4 +47,4 @@ with DAG(
         wait_seconds=3
     )
 
-    drop_schema >> create_schema >> populate_data >> trigger_airbyte
+    download_files >> init_db >> trigger_airbyte

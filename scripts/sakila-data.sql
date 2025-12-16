@@ -2210,6 +2210,9 @@ COMMIT;
 -- Trigger to enforce create dates on INSERT
 --
 
+CREATE TRIGGER customer_create_date BEFORE INSERT ON customer
+	FOR EACH ROW SET NEW.create_date = NOW();
+
 --
 -- Dumping data for table film
 --
@@ -30349,6 +30352,8 @@ COMMIT;
 -- Trigger to enforce payment_date during INSERT
 --
 
+CREATE TRIGGER payment_date BEFORE INSERT ON payment
+	FOR EACH ROW SET NEW.payment_date = NOW();
 
 --
 -- Dumping data for table rental
@@ -46402,7 +46407,11 @@ INSERT INTO rental VALUES (12382,'2005-08-18 08:32:33',3049,566,'2005-08-26 03:4
 COMMIT;
 
 --
+-- Trigger to enforce rental_date on INSERT
+--
 
+CREATE TRIGGER rental_date BEFORE INSERT ON rental
+	FOR EACH ROW SET NEW.rental_date = NOW();
 
 --
 -- Dumping data for table staff

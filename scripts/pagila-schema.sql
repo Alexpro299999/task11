@@ -1,5 +1,5 @@
 --
--- pagila_user QL database dump
+-- PostgreSQL database dump
 --
 
 -- Dumped from database version 12.11
@@ -17,17 +17,25 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: public; Type: SCHEMA; Schema: -; Owner: pagila_user 
+-- Name: public; Type: SCHEMA; Schema: -; Owner: postgres
 --
 
 -- *not* creating schema, since initdb creates it
 
 
-ALTER SCHEMA public OWNER TO pagila_user ;
-
+ALTER SCHEMA public OWNER TO postgres;
 
 --
--- Name: mpaa_rating; Type: TYPE; Schema: public; Owner: pagila_user 
+-- Name: bıgınt; Type: DOMAIN; Schema: public; Owner: postgres
+--
+
+CREATE DOMAIN public."bıgınt" AS bigint;
+
+
+ALTER DOMAIN public."bıgınt" OWNER TO postgres;
+
+--
+-- Name: mpaa_rating; Type: TYPE; Schema: public; Owner: postgres
 --
 
 CREATE TYPE public.mpaa_rating AS ENUM (
@@ -39,20 +47,20 @@ CREATE TYPE public.mpaa_rating AS ENUM (
 );
 
 
-ALTER TYPE public.mpaa_rating OWNER TO pagila_user ;
+ALTER TYPE public.mpaa_rating OWNER TO postgres;
 
 --
--- Name: year; Type: DOMAIN; Schema: public; Owner: pagila_user 
+-- Name: year; Type: DOMAIN; Schema: public; Owner: postgres
 --
 
 CREATE DOMAIN public.year AS integer
 	CONSTRAINT year_check CHECK (((VALUE >= 1901) AND (VALUE <= 2155)));
 
 
-ALTER DOMAIN public.year OWNER TO pagila_user ;
+ALTER DOMAIN public.year OWNER TO postgres;
 
 --
--- Name: _group_concat(text, text); Type: FUNCTION; Schema: public; Owner: pagila_user 
+-- Name: _group_concat(text, text); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
 CREATE FUNCTION public._group_concat(text, text) RETURNS text
@@ -66,10 +74,10 @@ END
 $_$;
 
 
-ALTER FUNCTION public._group_concat(text, text) OWNER TO pagila_user ;
+ALTER FUNCTION public._group_concat(text, text) OWNER TO postgres;
 
 --
--- Name: film_in_stock(integer, integer); Type: FUNCTION; Schema: public; Owner: pagila_user 
+-- Name: film_in_stock(integer, integer); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
 CREATE FUNCTION public.film_in_stock(p_film_id integer, p_store_id integer, OUT p_film_count integer) RETURNS SETOF integer
@@ -83,10 +91,10 @@ CREATE FUNCTION public.film_in_stock(p_film_id integer, p_store_id integer, OUT 
 $_$;
 
 
-ALTER FUNCTION public.film_in_stock(p_film_id integer, p_store_id integer, OUT p_film_count integer) OWNER TO pagila_user ;
+ALTER FUNCTION public.film_in_stock(p_film_id integer, p_store_id integer, OUT p_film_count integer) OWNER TO postgres;
 
 --
--- Name: film_not_in_stock(integer, integer); Type: FUNCTION; Schema: public; Owner: pagila_user 
+-- Name: film_not_in_stock(integer, integer); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
 CREATE FUNCTION public.film_not_in_stock(p_film_id integer, p_store_id integer, OUT p_film_count integer) RETURNS SETOF integer
@@ -100,19 +108,25 @@ CREATE FUNCTION public.film_not_in_stock(p_film_id integer, p_store_id integer, 
 $_$;
 
 
-ALTER FUNCTION public.film_not_in_stock(p_film_id integer, p_store_id integer, OUT p_film_count integer) OWNER TO pagila_user ;
+ALTER FUNCTION public.film_not_in_stock(p_film_id integer, p_store_id integer, OUT p_film_count integer) OWNER TO postgres;
 
 --
--- Name: get_customer_balance(integer, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: pagila_user 
+-- Name: get_customer_balance(integer, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
 CREATE FUNCTION public.get_customer_balance(p_customer_id integer, p_effective_date timestamp with time zone) RETURNS numeric
     LANGUAGE plpgsql
     AS $$
+       --#OK, WE NEED TO CALCULATE THE CURRENT BALANCE GIVEN A CUSTOMER_ID AND A DATE
+       --#THAT WE WANT THE BALANCE TO BE EFFECTIVE FOR. THE BALANCE IS:
+       --#   1) RENTAL FEES FOR ALL PREVIOUS RENTALS
+       --#   2) ONE DOLLAR FOR EVERY DAY THE PREVIOUS RENTALS ARE OVERDUE
+       --#   3) IF A FILM IS MORE THAN RENTAL_DURATION * 2 OVERDUE, CHARGE THE REPLACEMENT_COST
+       --#   4) SUBTRACT ALL PAYMENTS MADE BEFORE THE DATE SPECIFIED
 DECLARE
-    v_rentfees DECIMAL(5,2);
-    v_overfees INTEGER;
-    v_payments DECIMAL(5,2);
+    v_rentfees DECIMAL(5,2); --#FEES PAID TO RENT THE VIDEOS INITIALLY
+    v_overfees INTEGER;      --#LATE FEES FOR PRIOR RENTALS
+    v_payments DECIMAL(5,2); --#SUM OF PAYMENTS MADE PREVIOUSLY
 BEGIN
     SELECT COALESCE(SUM(film.rental_rate),0) INTO v_rentfees
     FROM film, inventory, rental
@@ -121,13 +135,8 @@ BEGIN
       AND rental.rental_date <= p_effective_date
       AND rental.customer_id = p_customer_id;
 
-    SELECT COALESCE(SUM(
-        CASE
-            WHEN (rental.return_date - rental.rental_date) > (film.rental_duration * '1 day'::interval)
-            THEN EXTRACT(DAY FROM (rental.return_date - rental.rental_date) - (film.rental_duration * '1 day'::interval))::INTEGER
-            ELSE 0
-        END
-    ),0) INTO v_overfees
+    SELECT COALESCE(SUM(IF((rental.return_date - rental.rental_date) > (film.rental_duration * '1 day'::interval),
+        ((rental.return_date - rental.rental_date) - (film.rental_duration * '1 day'::interval)),0)),0) INTO v_overfees
     FROM rental, inventory, film
     WHERE film.film_id = inventory.film_id
       AND inventory.inventory_id = rental.inventory_id
@@ -143,10 +152,11 @@ BEGIN
 END
 $$;
 
-ALTER FUNCTION public.get_customer_balance(p_customer_id integer, p_effective_date timestamp with time zone) OWNER TO pagila_user ;
+
+ALTER FUNCTION public.get_customer_balance(p_customer_id integer, p_effective_date timestamp with time zone) OWNER TO postgres;
 
 --
--- Name: inventory_held_by_customer(integer); Type: FUNCTION; Schema: public; Owner: pagila_user 
+-- Name: inventory_held_by_customer(integer); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
 CREATE FUNCTION public.inventory_held_by_customer(p_inventory_id integer) RETURNS integer
@@ -165,10 +175,10 @@ BEGIN
 END $$;
 
 
-ALTER FUNCTION public.inventory_held_by_customer(p_inventory_id integer) OWNER TO pagila_user ;
+ALTER FUNCTION public.inventory_held_by_customer(p_inventory_id integer) OWNER TO postgres;
 
 --
--- Name: inventory_in_stock(integer); Type: FUNCTION; Schema: public; Owner: pagila_user 
+-- Name: inventory_in_stock(integer); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
 CREATE FUNCTION public.inventory_in_stock(p_inventory_id integer) RETURNS boolean
@@ -202,10 +212,10 @@ BEGIN
 END $$;
 
 
-ALTER FUNCTION public.inventory_in_stock(p_inventory_id integer) OWNER TO pagila_user ;
+ALTER FUNCTION public.inventory_in_stock(p_inventory_id integer) OWNER TO postgres;
 
 --
--- Name: last_day(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: pagila_user 
+-- Name: last_day(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
 CREATE FUNCTION public.last_day(timestamp with time zone) RETURNS date
@@ -220,10 +230,10 @@ CREATE FUNCTION public.last_day(timestamp with time zone) RETURNS date
 $_$;
 
 
-ALTER FUNCTION public.last_day(timestamp with time zone) OWNER TO pagila_user ;
+ALTER FUNCTION public.last_day(timestamp with time zone) OWNER TO postgres;
 
 --
--- Name: last_updated(); Type: FUNCTION; Schema: public; Owner: pagila_user 
+-- Name: last_updated(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
 CREATE FUNCTION public.last_updated() RETURNS trigger
@@ -235,10 +245,10 @@ BEGIN
 END $$;
 
 
-ALTER FUNCTION public.last_updated() OWNER TO pagila_user ;
+ALTER FUNCTION public.last_updated() OWNER TO postgres;
 
 --
--- Name: customer_customer_id_seq; Type: SEQUENCE; Schema: public; Owner: pagila_user 
+-- Name: customer_customer_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.customer_customer_id_seq
@@ -249,14 +259,14 @@ CREATE SEQUENCE public.customer_customer_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.customer_customer_id_seq OWNER TO pagila_user ;
+ALTER TABLE public.customer_customer_id_seq OWNER TO postgres;
 
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 
 --
--- Name: customer; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: customer; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.customer (
@@ -273,10 +283,10 @@ CREATE TABLE public.customer (
 );
 
 
-ALTER TABLE public.customer OWNER TO pagila_user ;
+ALTER TABLE public.customer OWNER TO postgres;
 
 --
--- Name: rewards_report(integer, numeric); Type: FUNCTION; Schema: public; Owner: pagila_user 
+-- Name: rewards_report(integer, numeric); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
 CREATE FUNCTION public.rewards_report(min_monthly_purchases integer, min_dollar_amount_purchased numeric) RETURNS SETOF public.customer
@@ -337,10 +347,10 @@ END
 $_$;
 
 
-ALTER FUNCTION public.rewards_report(min_monthly_purchases integer, min_dollar_amount_purchased numeric) OWNER TO pagila_user ;
+ALTER FUNCTION public.rewards_report(min_monthly_purchases integer, min_dollar_amount_purchased numeric) OWNER TO postgres;
 
 --
--- Name: group_concat(text); Type: AGGREGATE; Schema: public; Owner: pagila_user 
+-- Name: group_concat(text); Type: AGGREGATE; Schema: public; Owner: postgres
 --
 
 CREATE AGGREGATE public.group_concat(text) (
@@ -349,10 +359,10 @@ CREATE AGGREGATE public.group_concat(text) (
 );
 
 
-ALTER AGGREGATE public.group_concat(text) OWNER TO pagila_user ;
+ALTER AGGREGATE public.group_concat(text) OWNER TO postgres;
 
 --
--- Name: actor_actor_id_seq; Type: SEQUENCE; Schema: public; Owner: pagila_user 
+-- Name: actor_actor_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.actor_actor_id_seq
@@ -363,10 +373,10 @@ CREATE SEQUENCE public.actor_actor_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.actor_actor_id_seq OWNER TO pagila_user ;
+ALTER TABLE public.actor_actor_id_seq OWNER TO postgres;
 
 --
--- Name: actor; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: actor; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.actor (
@@ -377,10 +387,10 @@ CREATE TABLE public.actor (
 );
 
 
-ALTER TABLE public.actor OWNER TO pagila_user ;
+ALTER TABLE public.actor OWNER TO postgres;
 
 --
--- Name: category_category_id_seq; Type: SEQUENCE; Schema: public; Owner: pagila_user 
+-- Name: category_category_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.category_category_id_seq
@@ -391,10 +401,10 @@ CREATE SEQUENCE public.category_category_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.category_category_id_seq OWNER TO pagila_user ;
+ALTER TABLE public.category_category_id_seq OWNER TO postgres;
 
 --
--- Name: category; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: category; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.category (
@@ -404,10 +414,10 @@ CREATE TABLE public.category (
 );
 
 
-ALTER TABLE public.category OWNER TO pagila_user ;
+ALTER TABLE public.category OWNER TO postgres;
 
 --
--- Name: film_film_id_seq; Type: SEQUENCE; Schema: public; Owner: pagila_user 
+-- Name: film_film_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.film_film_id_seq
@@ -418,10 +428,10 @@ CREATE SEQUENCE public.film_film_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.film_film_id_seq OWNER TO pagila_user ;
+ALTER TABLE public.film_film_id_seq OWNER TO postgres;
 
 --
--- Name: film; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: film; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.film (
@@ -442,10 +452,10 @@ CREATE TABLE public.film (
 );
 
 
-ALTER TABLE public.film OWNER TO pagila_user ;
+ALTER TABLE public.film OWNER TO postgres;
 
 --
--- Name: film_actor; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: film_actor; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.film_actor (
@@ -455,10 +465,10 @@ CREATE TABLE public.film_actor (
 );
 
 
-ALTER TABLE public.film_actor OWNER TO pagila_user ;
+ALTER TABLE public.film_actor OWNER TO postgres;
 
 --
--- Name: film_category; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: film_category; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.film_category (
@@ -468,10 +478,10 @@ CREATE TABLE public.film_category (
 );
 
 
-ALTER TABLE public.film_category OWNER TO pagila_user ;
+ALTER TABLE public.film_category OWNER TO postgres;
 
 --
--- Name: actor_info; Type: VIEW; Schema: public; Owner: pagila_user 
+-- Name: actor_info; Type: VIEW; Schema: public; Owner: postgres
 --
 
 CREATE VIEW public.actor_info AS
@@ -491,10 +501,10 @@ CREATE VIEW public.actor_info AS
   GROUP BY a.actor_id, a.first_name, a.last_name;
 
 
-ALTER TABLE public.actor_info OWNER TO pagila_user ;
+ALTER TABLE public.actor_info OWNER TO postgres;
 
 --
--- Name: address_address_id_seq; Type: SEQUENCE; Schema: public; Owner: pagila_user 
+-- Name: address_address_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.address_address_id_seq
@@ -505,10 +515,10 @@ CREATE SEQUENCE public.address_address_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.address_address_id_seq OWNER TO pagila_user ;
+ALTER TABLE public.address_address_id_seq OWNER TO postgres;
 
 --
--- Name: address; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: address; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.address (
@@ -523,10 +533,10 @@ CREATE TABLE public.address (
 );
 
 
-ALTER TABLE public.address OWNER TO pagila_user ;
+ALTER TABLE public.address OWNER TO postgres;
 
 --
--- Name: city_city_id_seq; Type: SEQUENCE; Schema: public; Owner: pagila_user 
+-- Name: city_city_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.city_city_id_seq
@@ -537,10 +547,10 @@ CREATE SEQUENCE public.city_city_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.city_city_id_seq OWNER TO pagila_user ;
+ALTER TABLE public.city_city_id_seq OWNER TO postgres;
 
 --
--- Name: city; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: city; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.city (
@@ -551,10 +561,10 @@ CREATE TABLE public.city (
 );
 
 
-ALTER TABLE public.city OWNER TO pagila_user ;
+ALTER TABLE public.city OWNER TO postgres;
 
 --
--- Name: country_country_id_seq; Type: SEQUENCE; Schema: public; Owner: pagila_user 
+-- Name: country_country_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.country_country_id_seq
@@ -565,10 +575,10 @@ CREATE SEQUENCE public.country_country_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.country_country_id_seq OWNER TO pagila_user ;
+ALTER TABLE public.country_country_id_seq OWNER TO postgres;
 
 --
--- Name: country; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: country; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.country (
@@ -578,10 +588,10 @@ CREATE TABLE public.country (
 );
 
 
-ALTER TABLE public.country OWNER TO pagila_user ;
+ALTER TABLE public.country OWNER TO postgres;
 
 --
--- Name: customer_list; Type: VIEW; Schema: public; Owner: pagila_user 
+-- Name: customer_list; Type: VIEW; Schema: public; Owner: postgres
 --
 
 CREATE VIEW public.customer_list AS
@@ -603,10 +613,10 @@ CREATE VIEW public.customer_list AS
      JOIN public.country ON ((city.country_id = country.country_id)));
 
 
-ALTER TABLE public.customer_list OWNER TO pagila_user ;
+ALTER TABLE public.customer_list OWNER TO postgres;
 
 --
--- Name: film_list; Type: VIEW; Schema: public; Owner: pagila_user 
+-- Name: film_list; Type: VIEW; Schema: public; Owner: postgres
 --
 
 CREATE VIEW public.film_list AS
@@ -626,10 +636,10 @@ CREATE VIEW public.film_list AS
   GROUP BY film.film_id, film.title, film.description, category.name, film.rental_rate, film.length, film.rating;
 
 
-ALTER TABLE public.film_list OWNER TO pagila_user ;
+ALTER TABLE public.film_list OWNER TO postgres;
 
 --
--- Name: inventory_inventory_id_seq; Type: SEQUENCE; Schema: public; Owner: pagila_user 
+-- Name: inventory_inventory_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.inventory_inventory_id_seq
@@ -640,10 +650,10 @@ CREATE SEQUENCE public.inventory_inventory_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.inventory_inventory_id_seq OWNER TO pagila_user ;
+ALTER TABLE public.inventory_inventory_id_seq OWNER TO postgres;
 
 --
--- Name: inventory; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: inventory; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.inventory (
@@ -654,10 +664,10 @@ CREATE TABLE public.inventory (
 );
 
 
-ALTER TABLE public.inventory OWNER TO pagila_user ;
+ALTER TABLE public.inventory OWNER TO postgres;
 
 --
--- Name: language_language_id_seq; Type: SEQUENCE; Schema: public; Owner: pagila_user 
+-- Name: language_language_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.language_language_id_seq
@@ -668,10 +678,10 @@ CREATE SEQUENCE public.language_language_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.language_language_id_seq OWNER TO pagila_user ;
+ALTER TABLE public.language_language_id_seq OWNER TO postgres;
 
 --
--- Name: language; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: language; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.language (
@@ -681,10 +691,10 @@ CREATE TABLE public.language (
 );
 
 
-ALTER TABLE public.language OWNER TO pagila_user ;
+ALTER TABLE public.language OWNER TO postgres;
 
 --
--- Name: nicer_but_slower_film_list; Type: VIEW; Schema: public; Owner: pagila_user 
+-- Name: nicer_but_slower_film_list; Type: VIEW; Schema: public; Owner: postgres
 --
 
 CREATE VIEW public.nicer_but_slower_film_list AS
@@ -704,10 +714,10 @@ CREATE VIEW public.nicer_but_slower_film_list AS
   GROUP BY film.film_id, film.title, film.description, category.name, film.rental_rate, film.length, film.rating;
 
 
-ALTER TABLE public.nicer_but_slower_film_list OWNER TO pagila_user ;
+ALTER TABLE public.nicer_but_slower_film_list OWNER TO postgres;
 
 --
--- Name: payment_payment_id_seq; Type: SEQUENCE; Schema: public; Owner: pagila_user 
+-- Name: payment_payment_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.payment_payment_id_seq
@@ -718,10 +728,10 @@ CREATE SEQUENCE public.payment_payment_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.payment_payment_id_seq OWNER TO pagila_user ;
+ALTER TABLE public.payment_payment_id_seq OWNER TO postgres;
 
 --
--- Name: payment; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: payment; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.payment (
@@ -736,10 +746,10 @@ CREATE TABLE public.payment (
 PARTITION BY RANGE (payment_date);
 
 
-ALTER TABLE public.payment OWNER TO pagila_user ;
+ALTER TABLE public.payment OWNER TO postgres;
 
 --
--- Name: payment_p2022_01; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_01; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.payment_p2022_01 (
@@ -752,10 +762,10 @@ CREATE TABLE public.payment_p2022_01 (
 );
 
 
-ALTER TABLE public.payment_p2022_01 OWNER TO pagila_user ;
+ALTER TABLE public.payment_p2022_01 OWNER TO postgres;
 
 --
--- Name: payment_p2022_02; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_02; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.payment_p2022_02 (
@@ -768,10 +778,10 @@ CREATE TABLE public.payment_p2022_02 (
 );
 
 
-ALTER TABLE public.payment_p2022_02 OWNER TO pagila_user ;
+ALTER TABLE public.payment_p2022_02 OWNER TO postgres;
 
 --
--- Name: payment_p2022_03; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_03; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.payment_p2022_03 (
@@ -784,10 +794,10 @@ CREATE TABLE public.payment_p2022_03 (
 );
 
 
-ALTER TABLE public.payment_p2022_03 OWNER TO pagila_user ;
+ALTER TABLE public.payment_p2022_03 OWNER TO postgres;
 
 --
--- Name: payment_p2022_04; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_04; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.payment_p2022_04 (
@@ -800,10 +810,10 @@ CREATE TABLE public.payment_p2022_04 (
 );
 
 
-ALTER TABLE public.payment_p2022_04 OWNER TO pagila_user ;
+ALTER TABLE public.payment_p2022_04 OWNER TO postgres;
 
 --
--- Name: payment_p2022_05; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_05; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.payment_p2022_05 (
@@ -816,10 +826,10 @@ CREATE TABLE public.payment_p2022_05 (
 );
 
 
-ALTER TABLE public.payment_p2022_05 OWNER TO pagila_user ;
+ALTER TABLE public.payment_p2022_05 OWNER TO postgres;
 
 --
--- Name: payment_p2022_06; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_06; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.payment_p2022_06 (
@@ -832,10 +842,10 @@ CREATE TABLE public.payment_p2022_06 (
 );
 
 
-ALTER TABLE public.payment_p2022_06 OWNER TO pagila_user ;
+ALTER TABLE public.payment_p2022_06 OWNER TO postgres;
 
 --
--- Name: payment_p2022_07; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_07; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.payment_p2022_07 (
@@ -848,10 +858,10 @@ CREATE TABLE public.payment_p2022_07 (
 );
 
 
-ALTER TABLE public.payment_p2022_07 OWNER TO pagila_user ;
+ALTER TABLE public.payment_p2022_07 OWNER TO postgres;
 
 --
--- Name: rental_rental_id_seq; Type: SEQUENCE; Schema: public; Owner: pagila_user 
+-- Name: rental_rental_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.rental_rental_id_seq
@@ -862,10 +872,10 @@ CREATE SEQUENCE public.rental_rental_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.rental_rental_id_seq OWNER TO pagila_user ;
+ALTER TABLE public.rental_rental_id_seq OWNER TO postgres;
 
 --
--- Name: rental; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: rental; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.rental (
@@ -879,10 +889,10 @@ CREATE TABLE public.rental (
 );
 
 
-ALTER TABLE public.rental OWNER TO pagila_user ;
+ALTER TABLE public.rental OWNER TO postgres;
 
 --
--- Name: rental_by_category; Type: MATERIALIZED VIEW; Schema: public; Owner: pagila_user 
+-- Name: rental_by_category; Type: MATERIALIZED VIEW; Schema: public; Owner: postgres
 --
 
 CREATE MATERIALIZED VIEW public.rental_by_category AS
@@ -899,10 +909,10 @@ CREATE MATERIALIZED VIEW public.rental_by_category AS
   WITH NO DATA;
 
 
-ALTER TABLE public.rental_by_category OWNER TO pagila_user ;
+ALTER TABLE public.rental_by_category OWNER TO postgres;
 
 --
--- Name: sales_by_film_category; Type: VIEW; Schema: public; Owner: pagila_user 
+-- Name: sales_by_film_category; Type: VIEW; Schema: public; Owner: postgres
 --
 
 CREATE VIEW public.sales_by_film_category AS
@@ -918,10 +928,10 @@ CREATE VIEW public.sales_by_film_category AS
   ORDER BY (sum(p.amount)) DESC;
 
 
-ALTER TABLE public.sales_by_film_category OWNER TO pagila_user ;
+ALTER TABLE public.sales_by_film_category OWNER TO postgres;
 
 --
--- Name: staff_staff_id_seq; Type: SEQUENCE; Schema: public; Owner: pagila_user 
+-- Name: staff_staff_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.staff_staff_id_seq
@@ -932,10 +942,10 @@ CREATE SEQUENCE public.staff_staff_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.staff_staff_id_seq OWNER TO pagila_user ;
+ALTER TABLE public.staff_staff_id_seq OWNER TO postgres;
 
 --
--- Name: staff; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: staff; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.staff (
@@ -953,10 +963,10 @@ CREATE TABLE public.staff (
 );
 
 
-ALTER TABLE public.staff OWNER TO pagila_user ;
+ALTER TABLE public.staff OWNER TO postgres;
 
 --
--- Name: store_store_id_seq; Type: SEQUENCE; Schema: public; Owner: pagila_user 
+-- Name: store_store_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.store_store_id_seq
@@ -967,10 +977,10 @@ CREATE SEQUENCE public.store_store_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.store_store_id_seq OWNER TO pagila_user ;
+ALTER TABLE public.store_store_id_seq OWNER TO postgres;
 
 --
--- Name: store; Type: TABLE; Schema: public; Owner: pagila_user 
+-- Name: store; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.store (
@@ -981,10 +991,10 @@ CREATE TABLE public.store (
 );
 
 
-ALTER TABLE public.store OWNER TO pagila_user ;
+ALTER TABLE public.store OWNER TO postgres;
 
 --
--- Name: sales_by_store; Type: VIEW; Schema: public; Owner: pagila_user 
+-- Name: sales_by_store; Type: VIEW; Schema: public; Owner: postgres
 --
 
 CREATE VIEW public.sales_by_store AS
@@ -1003,10 +1013,10 @@ CREATE VIEW public.sales_by_store AS
   ORDER BY cy.country, c.city;
 
 
-ALTER TABLE public.sales_by_store OWNER TO pagila_user ;
+ALTER TABLE public.sales_by_store OWNER TO postgres;
 
 --
--- Name: staff_list; Type: VIEW; Schema: public; Owner: pagila_user 
+-- Name: staff_list; Type: VIEW; Schema: public; Owner: postgres
 --
 
 CREATE VIEW public.staff_list AS
@@ -1024,59 +1034,59 @@ CREATE VIEW public.staff_list AS
      JOIN public.country ON ((city.country_id = country.country_id)));
 
 
-ALTER TABLE public.staff_list OWNER TO pagila_user ;
+ALTER TABLE public.staff_list OWNER TO postgres;
 
 --
--- Name: payment_p2022_01; Type: TABLE ATTACH; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_01; Type: TABLE ATTACH; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment ATTACH PARTITION public.payment_p2022_01 FOR VALUES FROM ('2022-01-01 00:00:00+00') TO ('2022-02-01 00:00:00+00');
 
 
 --
--- Name: payment_p2022_02; Type: TABLE ATTACH; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_02; Type: TABLE ATTACH; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment ATTACH PARTITION public.payment_p2022_02 FOR VALUES FROM ('2022-02-01 00:00:00+00') TO ('2022-03-01 00:00:00+00');
 
 
 --
--- Name: payment_p2022_03; Type: TABLE ATTACH; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_03; Type: TABLE ATTACH; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment ATTACH PARTITION public.payment_p2022_03 FOR VALUES FROM ('2022-03-01 00:00:00+00') TO ('2022-04-01 01:00:00+01');
 
 
 --
--- Name: payment_p2022_04; Type: TABLE ATTACH; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_04; Type: TABLE ATTACH; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment ATTACH PARTITION public.payment_p2022_04 FOR VALUES FROM ('2022-04-01 01:00:00+01') TO ('2022-05-01 01:00:00+01');
 
 
 --
--- Name: payment_p2022_05; Type: TABLE ATTACH; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_05; Type: TABLE ATTACH; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment ATTACH PARTITION public.payment_p2022_05 FOR VALUES FROM ('2022-05-01 01:00:00+01') TO ('2022-06-01 01:00:00+01');
 
 
 --
--- Name: payment_p2022_06; Type: TABLE ATTACH; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_06; Type: TABLE ATTACH; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment ATTACH PARTITION public.payment_p2022_06 FOR VALUES FROM ('2022-06-01 01:00:00+01') TO ('2022-07-01 01:00:00+01');
 
 
 --
--- Name: payment_p2022_07; Type: TABLE ATTACH; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_07; Type: TABLE ATTACH; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment ATTACH PARTITION public.payment_p2022_07 FOR VALUES FROM ('2022-07-01 01:00:00+01') TO ('2022-08-01 01:00:00+01');
 
 
 --
--- Name: actor actor_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: actor actor_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.actor
@@ -1084,7 +1094,7 @@ ALTER TABLE ONLY public.actor
 
 
 --
--- Name: address address_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: address address_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.address
@@ -1092,7 +1102,7 @@ ALTER TABLE ONLY public.address
 
 
 --
--- Name: category category_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: category category_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.category
@@ -1100,7 +1110,7 @@ ALTER TABLE ONLY public.category
 
 
 --
--- Name: city city_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: city city_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.city
@@ -1108,7 +1118,7 @@ ALTER TABLE ONLY public.city
 
 
 --
--- Name: country country_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: country country_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.country
@@ -1116,7 +1126,7 @@ ALTER TABLE ONLY public.country
 
 
 --
--- Name: customer customer_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: customer customer_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.customer
@@ -1124,7 +1134,7 @@ ALTER TABLE ONLY public.customer
 
 
 --
--- Name: film_actor film_actor_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: film_actor film_actor_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.film_actor
@@ -1132,7 +1142,7 @@ ALTER TABLE ONLY public.film_actor
 
 
 --
--- Name: film_category film_category_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: film_category film_category_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.film_category
@@ -1140,7 +1150,7 @@ ALTER TABLE ONLY public.film_category
 
 
 --
--- Name: film film_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: film film_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.film
@@ -1148,7 +1158,7 @@ ALTER TABLE ONLY public.film
 
 
 --
--- Name: inventory inventory_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: inventory inventory_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.inventory
@@ -1156,7 +1166,7 @@ ALTER TABLE ONLY public.inventory
 
 
 --
--- Name: language language_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: language language_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.language
@@ -1164,7 +1174,7 @@ ALTER TABLE ONLY public.language
 
 
 --
--- Name: rental rental_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: rental rental_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.rental
@@ -1172,7 +1182,7 @@ ALTER TABLE ONLY public.rental
 
 
 --
--- Name: staff staff_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: staff staff_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.staff
@@ -1180,7 +1190,7 @@ ALTER TABLE ONLY public.staff
 
 
 --
--- Name: store store_pkey; Type: CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: store store_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.store
@@ -1188,350 +1198,350 @@ ALTER TABLE ONLY public.store
 
 
 --
--- Name: film_fulltext_idx; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: film_fulltext_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX film_fulltext_idx ON public.film USING gist (fulltext);
 
 
 --
--- Name: idx_actor_last_name; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_actor_last_name; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_actor_last_name ON public.actor USING btree (last_name);
 
 
 --
--- Name: idx_fk_address_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_address_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_address_id ON public.customer USING btree (address_id);
 
 
 --
--- Name: idx_fk_city_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_city_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_city_id ON public.address USING btree (city_id);
 
 
 --
--- Name: idx_fk_country_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_country_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_country_id ON public.city USING btree (country_id);
 
 
 --
--- Name: idx_fk_film_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_film_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_film_id ON public.film_actor USING btree (film_id);
 
 
 --
--- Name: idx_fk_inventory_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_inventory_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_inventory_id ON public.rental USING btree (inventory_id);
 
 
 --
--- Name: idx_fk_language_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_language_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_language_id ON public.film USING btree (language_id);
 
 
 --
--- Name: idx_fk_original_language_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_original_language_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_original_language_id ON public.film USING btree (original_language_id);
 
 
 --
--- Name: idx_fk_payment_p2022_01_customer_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_payment_p2022_01_customer_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_payment_p2022_01_customer_id ON public.payment_p2022_01 USING btree (customer_id);
 
 
 --
--- Name: idx_fk_payment_p2022_01_staff_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_payment_p2022_01_staff_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_payment_p2022_01_staff_id ON public.payment_p2022_01 USING btree (staff_id);
 
 
 --
--- Name: idx_fk_payment_p2022_02_customer_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_payment_p2022_02_customer_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_payment_p2022_02_customer_id ON public.payment_p2022_02 USING btree (customer_id);
 
 
 --
--- Name: idx_fk_payment_p2022_02_staff_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_payment_p2022_02_staff_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_payment_p2022_02_staff_id ON public.payment_p2022_02 USING btree (staff_id);
 
 
 --
--- Name: idx_fk_payment_p2022_03_customer_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_payment_p2022_03_customer_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_payment_p2022_03_customer_id ON public.payment_p2022_03 USING btree (customer_id);
 
 
 --
--- Name: idx_fk_payment_p2022_03_staff_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_payment_p2022_03_staff_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_payment_p2022_03_staff_id ON public.payment_p2022_03 USING btree (staff_id);
 
 
 --
--- Name: idx_fk_payment_p2022_04_customer_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_payment_p2022_04_customer_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_payment_p2022_04_customer_id ON public.payment_p2022_04 USING btree (customer_id);
 
 
 --
--- Name: idx_fk_payment_p2022_04_staff_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_payment_p2022_04_staff_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_payment_p2022_04_staff_id ON public.payment_p2022_04 USING btree (staff_id);
 
 
 --
--- Name: idx_fk_payment_p2022_05_customer_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_payment_p2022_05_customer_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_payment_p2022_05_customer_id ON public.payment_p2022_05 USING btree (customer_id);
 
 
 --
--- Name: idx_fk_payment_p2022_05_staff_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_payment_p2022_05_staff_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_payment_p2022_05_staff_id ON public.payment_p2022_05 USING btree (staff_id);
 
 
 --
--- Name: idx_fk_payment_p2022_06_customer_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_payment_p2022_06_customer_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_payment_p2022_06_customer_id ON public.payment_p2022_06 USING btree (customer_id);
 
 
 --
--- Name: idx_fk_payment_p2022_06_staff_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_payment_p2022_06_staff_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_payment_p2022_06_staff_id ON public.payment_p2022_06 USING btree (staff_id);
 
 
 --
--- Name: idx_fk_store_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_fk_store_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_fk_store_id ON public.customer USING btree (store_id);
 
 
 --
--- Name: idx_last_name; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_last_name; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_last_name ON public.customer USING btree (last_name);
 
 
 --
--- Name: idx_store_id_film_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_store_id_film_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_store_id_film_id ON public.inventory USING btree (store_id, film_id);
 
 
 --
--- Name: idx_title; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_title; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_title ON public.film USING btree (title);
 
 
 --
--- Name: idx_unq_manager_staff_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_unq_manager_staff_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE UNIQUE INDEX idx_unq_manager_staff_id ON public.store USING btree (manager_staff_id);
 
 
 --
--- Name: idx_unq_rental_rental_date_inventory_id_customer_id; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: idx_unq_rental_rental_date_inventory_id_customer_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE UNIQUE INDEX idx_unq_rental_rental_date_inventory_id_customer_id ON public.rental USING btree (rental_date, inventory_id, customer_id);
 
 
 --
--- Name: payment_p2022_01_customer_id_idx; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_01_customer_id_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX payment_p2022_01_customer_id_idx ON public.payment_p2022_01 USING btree (customer_id);
 
 
 --
--- Name: payment_p2022_02_customer_id_idx; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_02_customer_id_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX payment_p2022_02_customer_id_idx ON public.payment_p2022_02 USING btree (customer_id);
 
 
 --
--- Name: payment_p2022_03_customer_id_idx; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_03_customer_id_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX payment_p2022_03_customer_id_idx ON public.payment_p2022_03 USING btree (customer_id);
 
 
 --
--- Name: payment_p2022_04_customer_id_idx; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_04_customer_id_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX payment_p2022_04_customer_id_idx ON public.payment_p2022_04 USING btree (customer_id);
 
 
 --
--- Name: payment_p2022_05_customer_id_idx; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_05_customer_id_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX payment_p2022_05_customer_id_idx ON public.payment_p2022_05 USING btree (customer_id);
 
 
 --
--- Name: payment_p2022_06_customer_id_idx; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_06_customer_id_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX payment_p2022_06_customer_id_idx ON public.payment_p2022_06 USING btree (customer_id);
 
 
 --
--- Name: rental_category; Type: INDEX; Schema: public; Owner: pagila_user 
+-- Name: rental_category; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE UNIQUE INDEX rental_category ON public.rental_by_category USING btree (category);
 
 
 --
--- Name: film film_fulltext_trigger; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: film film_fulltext_trigger; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER film_fulltext_trigger BEFORE INSERT OR UPDATE ON public.film FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger('fulltext', 'pg_catalog.english', 'title', 'description');
 
 
 --
--- Name: actor last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: actor last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.actor FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: address last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: address last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.address FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: category last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: category last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.category FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: city last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: city last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.city FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: country last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: country last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.country FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: customer last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: customer last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.customer FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: film last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: film last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.film FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: film_actor last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: film_actor last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.film_actor FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: film_category last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: film_category last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.film_category FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: inventory last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: inventory last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.inventory FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: language last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: language last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.language FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: rental last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: rental last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.rental FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: staff last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: staff last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.staff FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: store last_updated; Type: TRIGGER; Schema: public; Owner: pagila_user 
+-- Name: store last_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER last_updated BEFORE UPDATE ON public.store FOR EACH ROW EXECUTE FUNCTION public.last_updated();
 
 
 --
--- Name: address address_city_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: address address_city_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.address
@@ -1539,7 +1549,7 @@ ALTER TABLE ONLY public.address
 
 
 --
--- Name: city city_country_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: city city_country_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.city
@@ -1547,7 +1557,7 @@ ALTER TABLE ONLY public.city
 
 
 --
--- Name: customer customer_address_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: customer customer_address_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.customer
@@ -1555,7 +1565,7 @@ ALTER TABLE ONLY public.customer
 
 
 --
--- Name: customer customer_store_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: customer customer_store_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.customer
@@ -1563,7 +1573,7 @@ ALTER TABLE ONLY public.customer
 
 
 --
--- Name: film_actor film_actor_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: film_actor film_actor_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.film_actor
@@ -1571,7 +1581,7 @@ ALTER TABLE ONLY public.film_actor
 
 
 --
--- Name: film_actor film_actor_film_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: film_actor film_actor_film_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.film_actor
@@ -1579,7 +1589,7 @@ ALTER TABLE ONLY public.film_actor
 
 
 --
--- Name: film_category film_category_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: film_category film_category_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.film_category
@@ -1587,7 +1597,7 @@ ALTER TABLE ONLY public.film_category
 
 
 --
--- Name: film_category film_category_film_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: film_category film_category_film_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.film_category
@@ -1595,7 +1605,7 @@ ALTER TABLE ONLY public.film_category
 
 
 --
--- Name: film film_language_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: film film_language_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.film
@@ -1603,7 +1613,7 @@ ALTER TABLE ONLY public.film
 
 
 --
--- Name: film film_original_language_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: film film_original_language_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.film
@@ -1611,7 +1621,7 @@ ALTER TABLE ONLY public.film
 
 
 --
--- Name: inventory inventory_film_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: inventory inventory_film_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.inventory
@@ -1619,7 +1629,7 @@ ALTER TABLE ONLY public.inventory
 
 
 --
--- Name: inventory inventory_store_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: inventory inventory_store_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.inventory
@@ -1627,7 +1637,7 @@ ALTER TABLE ONLY public.inventory
 
 
 --
--- Name: payment_p2022_01 payment_p2022_01_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_01 payment_p2022_01_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_01
@@ -1635,7 +1645,7 @@ ALTER TABLE ONLY public.payment_p2022_01
 
 
 --
--- Name: payment_p2022_01 payment_p2022_01_rental_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_01 payment_p2022_01_rental_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_01
@@ -1643,7 +1653,7 @@ ALTER TABLE ONLY public.payment_p2022_01
 
 
 --
--- Name: payment_p2022_01 payment_p2022_01_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_01 payment_p2022_01_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_01
@@ -1651,7 +1661,7 @@ ALTER TABLE ONLY public.payment_p2022_01
 
 
 --
--- Name: payment_p2022_02 payment_p2022_02_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_02 payment_p2022_02_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_02
@@ -1659,7 +1669,7 @@ ALTER TABLE ONLY public.payment_p2022_02
 
 
 --
--- Name: payment_p2022_02 payment_p2022_02_rental_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_02 payment_p2022_02_rental_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_02
@@ -1667,7 +1677,7 @@ ALTER TABLE ONLY public.payment_p2022_02
 
 
 --
--- Name: payment_p2022_02 payment_p2022_02_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_02 payment_p2022_02_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_02
@@ -1675,7 +1685,7 @@ ALTER TABLE ONLY public.payment_p2022_02
 
 
 --
--- Name: payment_p2022_03 payment_p2022_03_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_03 payment_p2022_03_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_03
@@ -1683,7 +1693,7 @@ ALTER TABLE ONLY public.payment_p2022_03
 
 
 --
--- Name: payment_p2022_03 payment_p2022_03_rental_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_03 payment_p2022_03_rental_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_03
@@ -1691,7 +1701,7 @@ ALTER TABLE ONLY public.payment_p2022_03
 
 
 --
--- Name: payment_p2022_03 payment_p2022_03_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_03 payment_p2022_03_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_03
@@ -1699,7 +1709,7 @@ ALTER TABLE ONLY public.payment_p2022_03
 
 
 --
--- Name: payment_p2022_04 payment_p2022_04_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_04 payment_p2022_04_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_04
@@ -1707,7 +1717,7 @@ ALTER TABLE ONLY public.payment_p2022_04
 
 
 --
--- Name: payment_p2022_04 payment_p2022_04_rental_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_04 payment_p2022_04_rental_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_04
@@ -1715,7 +1725,7 @@ ALTER TABLE ONLY public.payment_p2022_04
 
 
 --
--- Name: payment_p2022_04 payment_p2022_04_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_04 payment_p2022_04_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_04
@@ -1723,7 +1733,7 @@ ALTER TABLE ONLY public.payment_p2022_04
 
 
 --
--- Name: payment_p2022_05 payment_p2022_05_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_05 payment_p2022_05_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_05
@@ -1731,7 +1741,7 @@ ALTER TABLE ONLY public.payment_p2022_05
 
 
 --
--- Name: payment_p2022_05 payment_p2022_05_rental_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_05 payment_p2022_05_rental_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_05
@@ -1739,7 +1749,7 @@ ALTER TABLE ONLY public.payment_p2022_05
 
 
 --
--- Name: payment_p2022_05 payment_p2022_05_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_05 payment_p2022_05_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_05
@@ -1747,7 +1757,7 @@ ALTER TABLE ONLY public.payment_p2022_05
 
 
 --
--- Name: payment_p2022_06 payment_p2022_06_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_06 payment_p2022_06_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_06
@@ -1755,7 +1765,7 @@ ALTER TABLE ONLY public.payment_p2022_06
 
 
 --
--- Name: payment_p2022_06 payment_p2022_06_rental_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_06 payment_p2022_06_rental_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_06
@@ -1763,7 +1773,7 @@ ALTER TABLE ONLY public.payment_p2022_06
 
 
 --
--- Name: payment_p2022_06 payment_p2022_06_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: payment_p2022_06 payment_p2022_06_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.payment_p2022_06
@@ -1771,7 +1781,7 @@ ALTER TABLE ONLY public.payment_p2022_06
 
 
 --
--- Name: rental rental_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: rental rental_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.rental
@@ -1779,7 +1789,7 @@ ALTER TABLE ONLY public.rental
 
 
 --
--- Name: rental rental_inventory_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: rental rental_inventory_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.rental
@@ -1787,7 +1797,7 @@ ALTER TABLE ONLY public.rental
 
 
 --
--- Name: rental rental_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: rental rental_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.rental
@@ -1795,7 +1805,7 @@ ALTER TABLE ONLY public.rental
 
 
 --
--- Name: staff staff_address_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: staff staff_address_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.staff
@@ -1803,7 +1813,7 @@ ALTER TABLE ONLY public.staff
 
 
 --
--- Name: staff staff_store_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: staff staff_store_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.staff
@@ -1811,7 +1821,7 @@ ALTER TABLE ONLY public.staff
 
 
 --
--- Name: store store_address_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pagila_user 
+-- Name: store store_address_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.store
@@ -1819,7 +1829,7 @@ ALTER TABLE ONLY public.store
 
 
 --
--- Name: SCHEMA public; Type: ACL; Schema: -; Owner: pagila_user 
+-- Name: SCHEMA public; Type: ACL; Schema: -; Owner: postgres
 --
 
 REVOKE USAGE ON SCHEMA public FROM PUBLIC;
@@ -1827,6 +1837,6 @@ GRANT ALL ON SCHEMA public TO PUBLIC;
 
 
 --
--- pagila_user QL database dump complete
+-- PostgreSQL database dump complete
 --
 

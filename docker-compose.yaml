@@ -306,6 +306,7 @@ services:
   mysql-sakila:
     image: mysql:8.0-debian
     container_name: mysql-sakila
+    command: --log-bin-trust-function-creators=1
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: sakila
