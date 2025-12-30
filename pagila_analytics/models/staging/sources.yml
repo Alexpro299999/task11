@@ -1,0 +1,50 @@
+version: 2
+
+sources:
+  - name: pagila
+    database: raw_data
+    schema: PAGILA 
+    freshness:
+      warn_after: {count: 24, period: hour}
+      error_after: {count: 48, period: hour}
+    loaded_at_field: _AIRBYTE_EMITTED_AT 
+    tables:
+      - name: ACTOR
+      - name: ADDRESS
+      - name: CATEGORY
+      - name: CITY
+      - name: COUNTRY
+      - name: CUSTOMER
+      - name: FILM
+      - name: FILM_ACTOR
+      - name: FILM_CATEGORY
+      - name: INVENTORY
+      - name: LANGUAGE
+      - name: PAYMENT
+      - name: RENTAL
+      - name: STAFF
+      - name: STORE
+
+  - name: sakila
+    database: raw_data
+    schema: SAKILA
+    freshness:
+      warn_after: {count: 24, period: hour}
+      error_after: {count: 48, period: hour}
+    loaded_at_field: _AIRBYTE_EMITTED_AT
+    tables:
+      - name: ACTOR
+      - name: ADDRESS
+      - name: CATEGORY
+      - name: CITY
+      - name: COUNTRY
+      - name: CUSTOMER
+      - name: FILM
+      - name: FILM_ACTOR
+      - name: FILM_CATEGORY
+      - name: INVENTORY
+      - name: LANGUAGE
+      - name: PAYMENT
+      - name: RENTAL
+      - name: STAFF
+      - name: STORE

@@ -1,7 +1,14 @@
 from datetime import datetime
 from airflow import DAG
-from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
-from config import SCRIPTS_PATH
+from airflow.operators.bash import BashOperator
+from airflow.providers.airbyte.operators.airbyte import AirbyteTriggerSyncOperator
+from config import (
+    SCRIPTS_PATH,
+    SAKILA_DOWNLOAD_URL,
+    SAKILA_SCHEMA_PATH,
+    SAKILA_DATA_PATH,
+    AIRBYTE_SAKILA_CONNECTION_ID
+)
 
 default_args = {
     'owner': 'airflow',
@@ -13,20 +20,29 @@ with DAG(
     default_args=default_args,
     schedule=None,
     catchup=False,
-    template_searchpath=[SCRIPTS_PATH],
     tags=['sakila', 'mysql', 'setup']
 ) as dag:
 
-    create_schema = SQLExecuteQueryOperator(
-        task_id='create_schema',
-        conn_id='mysql_sakila_conn',
-        sql='sakila-mysql-clean.sql'
+    download_files = BashOperator(
+        task_id='download_files',
+        bash_command=f"mkdir -p {SCRIPTS_PATH} && curl -L {SAKILA_DOWNLOAD_URL} | tar xz -C {SCRIPTS_PATH} --strip-components=1"
     )
 
-    populate_data = SQLExecuteQueryOperator(
-        task_id='populate_data',
-        conn_id='mysql_sakila_conn',
-        sql='sakila-mysql-clean-data.sql'
+    init_db = BashOperator(
+        task_id='init_db',
+        bash_command=f"""
+            mysql -h mysql-sakila -P 3306 -u sakila_user -psakila_password sakila < {SAKILA_SCHEMA_PATH} && \\
+            mysql -h mysql-sakila -P 3306 -u sakila_user -psakila_password sakila < {SAKILA_DATA_PATH}
+        """
     )
 
-    create_schema >> populate_data
+    trigger_airbyte = AirbyteTriggerSyncOperator(
+        task_id='trigger_airbyte_sakila',
+        airbyte_conn_id='airbyte_conn',
+        connection_id=AIRBYTE_SAKILA_CONNECTION_ID,
+        asynchronous=False,
+        timeout=3600,
+        wait_seconds=3
+    )
+
+    download_files >> init_db >> trigger_airbyte
